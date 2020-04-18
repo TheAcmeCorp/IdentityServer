@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using IdentityServer4;
 using IdentityServer4.Models;
+using IdentityServer4.Services;
 using IdentityServer4.Test;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -12,11 +13,16 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
+using System.Reflection;
+using IdentityServer4.EntityFramework.DbContexts;
+using IdentityServer4.EntityFramework.Mappers;
 
 namespace AcmeCorpIdentityServer
 {
     public class Startup
     {
+        readonly string AllOriginsAllowed = "_myAllowSpecificOrigins";
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
@@ -27,33 +33,27 @@ namespace AcmeCorpIdentityServer
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
+            string connectionString = Configuration.GetConnectionString("DefaultConnection");
+            var migrationsAssembly = typeof(Startup).GetTypeInfo().Assembly.GetName().Name;
+            services.AddCors(options =>
+            {
+                options.AddPolicy(name: AllOriginsAllowed,
+                                  builder =>
+                                  {
+                                      builder.AllowAnyOrigin();
+                                      builder.AllowAnyMethod();
+                                      builder.AllowAnyHeader();
+                                  });
+            });
             services.AddControllers();
             services.AddRazorPages();
             services.AddIdentityServer()
                 .AddDeveloperSigningCredential()
-                .AddInMemoryIdentityResources(new List<IdentityResource>
+                .AddConfigurationStore(options =>
                 {
-                    new IdentityResources.OpenId(),
-                    new IdentityResources.Profile()
-                })
-                .AddInMemoryClients(new List<Client>
-                {
-                    new Client
-                    {
-                        ClientId = "AcmeWidgetsVinylMusicStore",
-                        ClientName = "Vinyl Music Store",
-                        ClientSecrets = { new Secret("supersecret")},
-                        AllowedGrantTypes = GrantTypes.Code,
-                        AllowOfflineAccess = true,
-                        RequireConsent = false,
-                        RedirectUris = { "http://localhost:9000/signin-oidc" },
-                        PostLogoutRedirectUris = { "http://localhost:9000/signout-oidc"},
-                        AllowedScopes =
-                        {
-                            IdentityServerConstants.StandardScopes.OpenId,
-                            IdentityServerConstants.StandardScopes.Profile
-                        }
-                    }
+                    options.ConfigureDbContext = builder =>
+                        builder.UseSqlServer(connectionString,
+                            sql => sql.MigrationsAssembly(migrationsAssembly));
                 })
                 .AddTestUsers(new List<TestUser>
                 {
@@ -64,12 +64,24 @@ namespace AcmeCorpIdentityServer
                         SubjectId = "1",
                         Username = "lalit.adithya"
                     }
+                })
+                .AddOperationalStore(options =>
+                {
+                    options.ConfigureDbContext = builder =>
+                        builder.UseSqlServer(connectionString,
+                            sql => sql.MigrationsAssembly(migrationsAssembly));
+
+                    // this enables automatic token cleanup. this is optional.
+                    options.EnableTokenCleanup = true;
+                    options.TokenCleanupInterval = 30;
                 });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
+            InitializeDatabase(app);
+
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
@@ -78,6 +90,8 @@ namespace AcmeCorpIdentityServer
             app.UseRouting();
 
             app.UseStaticFiles();
+
+            app.UseCors(AllOriginsAllowed);
 
             app.UseAuthorization();
 
@@ -89,6 +103,16 @@ namespace AcmeCorpIdentityServer
                     name: "default",
                     pattern: "{controller=Home}/{action=Index}/{id?}");
             });
+        }
+
+        private void InitializeDatabase(IApplicationBuilder app)
+        {
+            using (var serviceScope = app.ApplicationServices.GetService<IServiceScopeFactory>().CreateScope())
+            {
+                serviceScope.ServiceProvider.GetRequiredService<PersistedGrantDbContext>().Database.Migrate();
+                var context = serviceScope.ServiceProvider.GetRequiredService<ConfigurationDbContext>();
+                context.Database.Migrate();
+            }
         }
     }
 }
