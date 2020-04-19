@@ -103,7 +103,7 @@ namespace AcmeCorpIdentityServer
                 else
                 {
                     // since we don't have a valid context, then we just go back to the home page
-                    return Redirect("~/");
+                    return Redirect("~/Identity");
                 }
             }
 

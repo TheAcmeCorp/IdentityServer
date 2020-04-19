@@ -70,10 +70,6 @@ namespace AcmeCorpIdentityServer
                     options.ConfigureDbContext = builder =>
                         builder.UseSqlServer(connectionString,
                             sql => sql.MigrationsAssembly(migrationsAssembly));
-
-                    // this enables automatic token cleanup. this is optional.
-                    options.EnableTokenCleanup = true;
-                    options.TokenCleanupInterval = 30;
                 });
         }
 
@@ -87,21 +83,24 @@ namespace AcmeCorpIdentityServer
                 app.UseDeveloperExceptionPage();
             }
 
-            app.UseRouting();
-
-            app.UseStaticFiles();
-
-            app.UseCors(AllOriginsAllowed);
-
-            app.UseAuthorization();
-
-            app.UseIdentityServer();
-
-            app.UseEndpoints(endpoints =>
+            app.Map("/Identity", builder =>
             {
-                endpoints.MapControllerRoute(
-                    name: "default",
-                    pattern: "{controller=Home}/{action=Index}/{id?}");
+                builder.UseRouting();
+
+                builder.UseStaticFiles();
+
+                builder.UseCors(AllOriginsAllowed);
+
+                builder.UseAuthorization();
+
+                builder.UseIdentityServer();
+
+                builder.UseEndpoints(endpoints =>
+                {
+                    endpoints.MapControllerRoute(
+                        name: "default",
+                        pattern: "{controller=Home}/{action=Index}/{id?}");
+                });
             });
         }
 
